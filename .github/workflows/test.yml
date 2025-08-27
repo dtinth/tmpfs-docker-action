@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        tmpfs: [enabled, disabled, enabled-default-size]
+        tmpfs: [enabled, disabled]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,9 +15,6 @@ jobs:
         uses: ./
         with:
           size: '8G'
-      - name: Configure Docker with tmpfs (default size)
-        if: matrix.tmpfs == 'enabled-default-size'
-        uses: ./
       - name: Configure Docker normal (baseline)
         if: matrix.tmpfs == 'disabled'
         run: |
