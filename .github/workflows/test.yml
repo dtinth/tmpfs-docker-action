@@ -83,8 +83,7 @@ jobs:
             sleep 1
           fi
           if [ -f /tmp/iostat.log ]; then
-            echo "Last 20 lines of iostat monitoring:"
-            tail -20 /tmp/iostat.log
+            cat /tmp/iostat.log
           else
             echo "No iostat log found"
           fi
