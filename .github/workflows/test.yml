@@ -1,0 +1,57 @@
+name: Docker Build Performance Test
+on: [push, workflow_dispatch]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tmpfs: [enabled, disabled]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure Docker with tmpfs
+        if: matrix.tmpfs == 'enabled'
+        run: |
+          echo "Setting up Docker with tmpfs..."
+          sudo systemctl stop docker.socket docker.service
+          sudo mkdir -p /tmp/docker
+          sudo mount -t tmpfs -o size=4G tmpfs /tmp/docker
+          sudo mkdir -p /etc/docker
+          echo '{"data-root":"/tmp/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl start docker
+          sleep 5
+          echo "Docker tmpfs setup complete"
+          docker info | grep "Docker Root Dir"
+          df -h | grep tmpfs
+      - name: Configure Docker normal (baseline)
+        if: matrix.tmpfs == 'disabled'
+        run: |
+          echo "Using default Docker configuration (disk-based)"
+          docker info | grep "Docker Root Dir"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Start iostat monitoring
+        run: |
+          iostat -x 10 &
+      - name: Build and load Docker image (with timing)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./example
+          file: ./example/Dockerfile
+          load: true
+          tags: react-test-${{ matrix.tmpfs }}:latest
+      - name: Test the built image
+        run: |
+          echo "=== Build completed with tmpfs: ${{ matrix.tmpfs }} ==="
+          docker images react-test-${{ matrix.tmpfs }}:latest
+          docker run --rm -d -p 3000:3000 --name react-app-${{ matrix.tmpfs }} react-test-${{ matrix.tmpfs }}:latest
+          sleep 10
+          curl -f http://localhost:3000 > /dev/null && echo "✅ App is running!" || echo "❌ App failed to start"
+          docker stop react-app-${{ matrix.tmpfs }}
+      - name: Show system stats
+        run: |
+          echo "=== System stats for tmpfs: ${{ matrix.tmpfs }} ==="
+          df -h
+          free -h
+          docker system df
