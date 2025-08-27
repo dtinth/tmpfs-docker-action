@@ -20,8 +20,19 @@ jobs:
           sudo mkdir -p /etc/docker
           echo '{"data-root":"/tmp/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
           sudo systemctl start docker
-          sleep 5
-          echo "Docker tmpfs setup complete"
+          echo "Waiting for Docker to be ready..."
+          timeout=60
+          elapsed=0
+          while ! docker info >/dev/null 2>&1; do
+            if [ $elapsed -ge $timeout ]; then
+              echo "❌ Timeout waiting for Docker to start"
+              exit 1
+            fi
+            echo "Docker not ready yet, waiting... (${elapsed}s/${timeout}s)"
+            sleep 2
+            elapsed=$((elapsed + 2))
+          done
+          echo "✅ Docker tmpfs setup complete"
           docker info | grep "Docker Root Dir"
           df -h | grep tmpfs
       - name: Configure Docker normal (baseline)
@@ -33,7 +44,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Start iostat monitoring
         run: |
-          iostat -x 10 &
+          echo "=== Initial iostat snapshot ==="
+          iostat -x 1 1
+          echo "Starting continuous iostat monitoring..."
+          iostat -x 10 > /tmp/iostat.log &
+          echo $! > /tmp/iostat.pid
       - name: Build and load Docker image (with timing)
         uses: docker/build-push-action@v5
         with:
@@ -55,3 +70,20 @@ jobs:
           df -h
           free -h
           docker system df
+      - name: Show iostat results
+        run: |
+          echo "=== Final iostat snapshot ==="
+          iostat -x 1 1
+          echo ""
+          echo "=== Continuous iostat monitoring results ==="
+          if [ -f /tmp/iostat.pid ]; then
+            iostat_pid=$(cat /tmp/iostat.pid)
+            kill $iostat_pid 2>/dev/null || true
+            sleep 1
+          fi
+          if [ -f /tmp/iostat.log ]; then
+            echo "Last 20 lines of iostat monitoring:"
+            tail -20 /tmp/iostat.log
+          else
+            echo "No iostat log found"
+          fi
