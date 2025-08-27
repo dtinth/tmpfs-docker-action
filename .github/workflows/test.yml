@@ -16,7 +16,7 @@ jobs:
           echo "Setting up Docker with tmpfs..."
           sudo systemctl stop docker.socket docker.service
           sudo mkdir -p /tmp/docker
-          sudo mount -t tmpfs -o size=4G tmpfs /tmp/docker
+          sudo mount -t tmpfs -o size=8G tmpfs /tmp/docker
           sudo mkdir -p /etc/docker
           echo '{"data-root":"/tmp/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
           sudo systemctl start docker
