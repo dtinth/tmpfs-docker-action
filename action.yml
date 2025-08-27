@@ -1,0 +1,51 @@
+name: 'Setup Docker with tmpfs'
+description: 'Configure Docker to use tmpfs for improved build performance'
+author: 'dtinth'
+
+inputs:
+  size:
+    description: 'Size of the tmpfs mount (e.g., 4G, 8G)'
+    required: false
+    default: '4G'
+
+outputs:
+  docker-root-dir:
+    description: 'The Docker root directory path'
+    value: ${{ steps.setup.outputs.docker-root-dir }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Docker with tmpfs
+      id: setup
+      shell: bash
+      run: |
+        echo "Setting up Docker with tmpfs..."
+        sudo systemctl stop docker.socket docker.service
+        sudo mkdir -p /tmp/docker
+        sudo mount -t tmpfs -o size=${{ inputs.size }} tmpfs /tmp/docker
+        sudo mkdir -p /etc/docker
+        echo '{"data-root":"/tmp/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
+        sudo systemctl start docker
+        echo "Waiting for Docker to be ready..."
+        timeout=60
+        start_time=$(date +%s)
+        while ! docker info >/dev/null 2>&1; do
+          current_time=$(date +%s)
+          elapsed=$((current_time - start_time))
+          if [ $elapsed -ge $timeout ]; then
+            echo "❌ Timeout waiting for Docker to start"
+            exit 1
+          fi
+          echo "Docker not ready yet, waiting... (${elapsed}s/${timeout}s)"
+          sleep 0.1
+        done
+        echo "✅ Docker tmpfs setup complete"
+        docker_root_dir=$(docker info | grep "Docker Root Dir" | cut -d: -f2 | xargs)
+        echo "docker-root-dir=$docker_root_dir" >> $GITHUB_OUTPUT
+        echo "Docker Root Dir: $docker_root_dir"
+        df -h | grep tmpfs
+
+branding:
+  icon: 'hard-drive'
+  color: 'blue'
