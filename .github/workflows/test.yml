@@ -6,36 +6,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        tmpfs: [enabled, disabled]
+        tmpfs: [enabled, disabled, enabled-default-size]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Configure Docker with tmpfs
         if: matrix.tmpfs == 'enabled'
-        run: |
-          echo "Setting up Docker with tmpfs..."
-          sudo systemctl stop docker.socket docker.service
-          sudo mkdir -p /tmp/docker
-          sudo mount -t tmpfs -o size=8G tmpfs /tmp/docker
-          sudo mkdir -p /etc/docker
-          echo '{"data-root":"/tmp/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl start docker
-          echo "Waiting for Docker to be ready..."
-          timeout=60
-          start_time=$(date +%s)
-          while ! docker info >/dev/null 2>&1; do
-            current_time=$(date +%s)
-            elapsed=$((current_time - start_time))
-            if [ $elapsed -ge $timeout ]; then
-              echo "❌ Timeout waiting for Docker to start"
-              exit 1
-            fi
-            echo "Docker not ready yet, waiting... (${elapsed}s/${timeout}s)"
-            sleep 0.1
-          done
-          echo "✅ Docker tmpfs setup complete"
-          docker info | grep "Docker Root Dir"
-          df -h | grep tmpfs
+        uses: ./
+        with:
+          size: '8G'
+      - name: Configure Docker with tmpfs (default size)
+        if: matrix.tmpfs == 'enabled-default-size'
+        uses: ./
       - name: Configure Docker normal (baseline)
         if: matrix.tmpfs == 'disabled'
         run: |
@@ -56,15 +38,15 @@ jobs:
           context: ./example
           file: ./example/Dockerfile
           load: true
-          tags: react-test-${{ matrix.tmpfs }}:latest
+          tags: react-test-${{ github.run_id }}-${{ matrix.tmpfs }}:latest
       - name: Test the built image
         run: |
           echo "=== Build completed with tmpfs: ${{ matrix.tmpfs }} ==="
-          docker images react-test-${{ matrix.tmpfs }}:latest
-          docker run --rm -d -p 3000:3000 --name react-app-${{ matrix.tmpfs }} react-test-${{ matrix.tmpfs }}:latest
+          docker images react-test-${{ github.run_id }}-${{ matrix.tmpfs }}:latest
+          docker run --rm -d -p 3000:3000 --name react-app-${{ github.run_id }}-${{ matrix.tmpfs }} react-test-${{ github.run_id }}-${{ matrix.tmpfs }}:latest
           sleep 10
           curl -f http://localhost:3000 > /dev/null && echo "✅ App is running!" || echo "❌ App failed to start"
-          docker stop react-app-${{ matrix.tmpfs }}
+          docker stop react-app-${{ github.run_id }}-${{ matrix.tmpfs }}
       - name: Show system stats
         run: |
           echo "=== System stats for tmpfs: ${{ matrix.tmpfs }} ==="
